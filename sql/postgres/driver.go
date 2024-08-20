@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"ariga.io/atlas/sql/internal/sqlx"
@@ -39,6 +40,7 @@ type (
 		// System variables that are set on `Open`.
 		version int
 		crdb    bool
+		ydb     bool
 	}
 )
 
@@ -97,26 +99,37 @@ func Open(db schema.ExecQuerier) (migrate.Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: scanning system variables: %w", err)
 	}
-	params, err := sqlx.ScanStrings(rows)
+	params, err := sqlx.ScanStringsMap(rows)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: failed scanning rows: %w", err)
 	}
-	if len(params) != 1 && len(params) != 2 {
+	if len(params) != 2 && len(params) != 3 {
 		return nil, fmt.Errorf("postgres: unexpected number of rows: %d", len(params))
 	}
-	if c.version, err = strconv.Atoi(params[0]); err != nil {
-		return nil, fmt.Errorf("postgres: malformed version: %s: %w", params[0], err)
+	if c.version, err = strconv.Atoi(params["server_version_num"]); err != nil {
+		return nil, fmt.Errorf("postgres: malformed version: %s: %w", params["server_version_num"], err)
 	}
 	if c.version < 10_00_00 {
 		return nil, fmt.Errorf("postgres: unsupported postgres version: %d", c.version)
 	}
-	// Means we are connected to CockroachDB because we have a result for name='crdb_version'. see `paramsQuery`.
-	if c.crdb = len(params) == 2; c.crdb {
+	// Means we are connected to CockroachDB because we have a result for name='crdb_version'. See `paramsQuery`.
+	if _, c.crdb = params["crdb_version"]; c.crdb {
 		return noLockDriver{
 			&Driver{
 				conn:        c,
 				Differ:      &sqlx.Diff{DiffDriver: &crdbDiff{diff{c}}},
 				Inspector:   &crdbInspect{inspect{c}},
+				PlanApplier: &planApply{c},
+			},
+		}, nil
+	}
+	// Means we are connected to YugabyteDB because 'server_version' includes 'YB'. See `paramsQuery`.
+	if c.ydb = strings.Contains(params["server_version"], "-YB-"); c.ydb {
+		return noLockDriver{
+			&Driver{
+				conn:        c,
+				Differ:      &sqlx.Diff{DiffDriver: &ydbDiff{diff{c}}},
+				Inspector:   &ydbInspect{inspect{c}},
 				PlanApplier: &planApply{c},
 			},
 		}, nil
@@ -540,6 +553,7 @@ const (
 	IndexTypeGIN        = "GIN"
 	IndexTypeGiST       = "GIST"
 	IndexTypeSPGiST     = "SPGIST"
+	IndexTypeLSM        = "LSM"
 	defaultPagePerRange = 128
 )
 

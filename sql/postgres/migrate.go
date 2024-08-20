@@ -1137,7 +1137,7 @@ func (s *state) partAttrs(b *sqlx.Builder, idx *schema.Index, p *schema.IndexPar
 
 func (s *state) index(b *sqlx.Builder, idx *schema.Index) error {
 	// Avoid appending the default method.
-	if t := (IndexType{}); sqlx.Has(idx.Attrs, &t) && strings.ToUpper(t.T) != IndexTypeBTree {
+	if t := (IndexType{}); sqlx.Has(idx.Attrs, &t) && (!s.ydb && strings.ToUpper(t.T) != IndexTypeBTree || s.ydb && strings.ToUpper(t.T) != IndexTypeLSM) {
 		b.P("USING", t.T)
 	}
 	if err := s.indexParts(b, idx); err != nil {

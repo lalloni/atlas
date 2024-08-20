@@ -92,6 +92,20 @@ func ScanStrings(rows *sql.Rows) ([]string, error) {
 	return vs, nil
 }
 
+// ScanStringsMap scans sql.Rows into a map of strings to string and closes it at the end.
+func ScanStringsMap(rows *sql.Rows) (map[string]string, error) {
+	defer rows.Close()
+	m := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		m[k] = v
+	}
+	return m, nil
+}
+
 type (
 	// ScanStringer groups the fmt.Stringer and sql.Scanner interfaces.
 	ScanStringer interface {
